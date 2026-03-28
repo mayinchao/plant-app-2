@@ -1,0 +1,101 @@
+name: Build Flet Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flet
+          
+          # 安装前端依赖
+          if [ -f "Frontend/requirements.txt" ]; then
+            pip install -r Frontend/requirements.txt
+          fi
+          
+          # 安装后端依赖
+          if [ -f "backend/requirements.txt" ]; then
+            pip install -r backend/requirements.txt
+          fi
+          
+          # 如果需要PyTorch（注意：Android构建可能不需要完整的PyTorch）
+          # 可以注释掉或使用CPU版本
+          # pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.4'
+          channel: 'stable'
+          cache: true
+
+      - name: Accept Android licenses
+        run: |
+          yes | flutter doctor --android-licenses || true
+
+      - name: Prepare project structure
+        run: |
+          # 确保backend目录是Python包
+          if [ ! -f "backend/__init__.py" ]; then
+            touch backend/__init__.py
+          fi
+          
+          # 显示项目结构用于调试
+          echo "Project structure:"
+          ls -la
+          echo "Frontend files:"
+          ls -la Frontend/
+          echo "Backend files:"
+          ls -la backend/
+
+      - name: Build APK
+        run: |
+          export FLET_YES=1
+          export PYTHONPATH="${PYTHONPATH}:${PWD}"
+          
+          # 构建APK
+          flet build apk Frontend/main.py
+
+      - name: Find and Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: plant-app-apk
+          path: |
+            build/apk/*.apk
+            build/**/*.apk
+            **/build/**/*.apk
+            **/outputs/apk/**/*.apk
+            Frontend/build/**/*.apk
+
+      - name: List build artifacts
+        if: always()
+        run: |
+          echo "Looking for APK files:"
+          find . -name "*.apk" -type f
